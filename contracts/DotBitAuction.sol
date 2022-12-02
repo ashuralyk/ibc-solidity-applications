@@ -1,19 +1,15 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.9;
 
-import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
 // import "hardhat/console.sol";
 
 contract DotBitAuction is Context {
-    using Address for address;
-    using Address for address payable;
-
     string public constant FIXED_SALE = "on_fixed_sell";
     string public constant BID_SALE = "on_bid_sell";
 
     modifier onlyEoa(address user) {
-        require(!user.isContract(), ".BIT: only allow EOA account");
+        require(user.code.length == 0, ".BIT: only allow EOA account");
         _;
     }
 
@@ -39,6 +35,10 @@ contract DotBitAuction is Context {
         uint256 lowestPrice,
         uint256 deadline
     );
+
+    event GetBidIncome(bytes32 indexed bidId, address buyer);
+
+    event Refund(bytes32 indexed bidId);
 
     struct PriceItem {
         uint256 deadline;
@@ -67,6 +67,15 @@ contract DotBitAuction is Context {
         _deadline_period = deadline;
     }
 
+    function transferOwner(address newOwner) public onlyOwner onlyEoa(newOwner) {
+        _owner = newOwner;
+    }
+
+    function transferValue(address payable recipient, uint256 amount) private {
+        require(address(this).balance >= amount, ".BIT: insufficient balance");
+        recipient.transfer(amount);
+    }
+
     function buy(
         address payable seller,
         address buyer,
@@ -88,7 +97,7 @@ contract DotBitAuction is Context {
         bytes32 fixedIdFromParams = keccak256(abi.encodePacked(FIXED_SALE, accountId, price, deadline));
         require(fixedId == fixedIdFromParams, ".BIT: fixedId dosen't match");
         
-        seller.sendValue(msg.value);
+        transferValue(seller, msg.value);
         emit Buy(seller, buyer, fixedId, accountId, price, deadline);
     }
 
@@ -118,7 +127,7 @@ contract DotBitAuction is Context {
 
         // refund the pre highest price
         if (item.value > 0) {
-            item.buyer.sendValue(item.value);
+            transferValue(item.buyer, item.value);
         }
 
         // update the highest price
@@ -136,12 +145,14 @@ contract DotBitAuction is Context {
         require(item.deadline >= block.timestamp, ".BIT: bid hasn't end up yet");
         require(buyer == item.buyer, ".BIT: incorrect buyer");
 
-        if (block.timestamp < item.deadline - _closing_period){
+        if (block.timestamp < item.deadline - _closing_period) {
             require(_msgSender() == item.seller, ".BIT: caller should be the seller before the end of bid");
         }
         
-        item.seller.sendValue(item.value);
+        transferValue(item.seller, item.value);
         delete _priceTable[bidId];
+
+        emit GetBidIncome(bidId, buyer);
     }
 
     function refund(bytes32 bidId) public onlyEoa(_msgSender()) {
@@ -149,7 +160,9 @@ contract DotBitAuction is Context {
         require(item.value > 0, ".BIT: invalid bidId");
         require(item.deadline < block.timestamp, ".BIT: bid hasn't end");
 
-        item.buyer.sendValue(item.value);
+        transferValue(item.buyer, item.value);
         delete _priceTable[bidId];
+
+        emit Refund(bidId);
     }
 }
