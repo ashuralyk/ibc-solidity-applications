@@ -18,6 +18,11 @@ contract DotBitAuction is Context {
         _;
     }
 
+    modifier onlyUnpaused {
+        require(!_paused, ".BIT: contract has paused, please wait unpause");
+        _;
+    }
+
     event Buy(
         address seller,
         address buyer,
@@ -48,23 +53,32 @@ contract DotBitAuction is Context {
         address payable seller;
     }
 
+    bool    _paused;
     address _owner;
     uint256 _billing_period;
     uint256 _closing_period;
+    uint256 _secure_period;
     uint256 _deadline_period;
     mapping (bytes32 => PriceItem) _priceTable;
 
     function construct() public {
+        _paused = false;
         _owner = _msgSender();
         _billing_period = 1 days;
         _closing_period = 1 days;
+        _secure_period = 1 hours;
         _deadline_period = 180 days;
     }
 
-    function changeSettings(uint256 billing, uint256 closing, uint256 deadline) public onlyOwner {
+    function changeSettings(uint256 billing, uint256 closing, uint256 secure, uint256 deadline) public onlyOwner {
         _billing_period = billing;
         _closing_period = closing;
+        _secure_period = secure;
         _deadline_period = deadline;
+    }
+
+    function setPause(bool pause) public onlyOwner {
+        _paused = pause;
     }
 
     function transferOwner(address newOwner) public onlyOwner onlyEoa(newOwner) {
@@ -89,10 +103,12 @@ contract DotBitAuction is Context {
         onlyEoa(_msgSender())
         onlyEoa(seller)
         onlyEoa(buyer)
+        onlyUnpaused
     {
+        require(price > 0, ".BIT: price can't be 0");
         require(msg.value >= price, ".BIT: ETH amount isn't enough");
         require(deadline <= block.timestamp + _deadline_period, ".BIT: deadline is too long");
-        require(deadline - 1 hours > block.timestamp, ".BIT: sale has end up");
+        require(deadline - _secure_period > block.timestamp, ".BIT: sale has end up");
         
         bytes32 fixedIdFromParams = keccak256(abi.encodePacked(FIXED_SALE, accountId, price, deadline));
         require(fixedId == fixedIdFromParams, ".BIT: fixedId dosen't match");
@@ -114,7 +130,9 @@ contract DotBitAuction is Context {
         onlyEoa(_msgSender())
         onlyEoa(buyer)
         onlyEoa(seller)
+        onlyUnpaused
     {
+        require(lowestPrice > 0, ".BIT: lowestPrice can't be 0");
         require(msg.value >= lowestPrice,  ".BIT: ETH amount isn't enough");
         require(deadline <= block.timestamp + _deadline_period, ".BIT: deadline is too long");
         require(block.timestamp < deadline - _billing_period - _closing_period, ".BIT: sale has end up");
@@ -140,8 +158,8 @@ contract DotBitAuction is Context {
         emit Bid(seller, buyer, bidId, accountId, lowestPrice, deadline);
     }
 
-    function getBidIncome(bytes32 bidId, address buyer) public onlyEoa(_msgSender()) {
-        PriceItem storage item = _priceTable[bidId];
+    function getBidIncome(bytes32 bidId, address buyer) public onlyEoa(_msgSender()) onlyUnpaused {
+        PriceItem memory item = _priceTable[bidId];
         require(item.deadline >= block.timestamp, ".BIT: bid hasn't end up yet");
         require(buyer == item.buyer, ".BIT: incorrect buyer");
 
@@ -155,8 +173,8 @@ contract DotBitAuction is Context {
         emit GetBidIncome(bidId, buyer);
     }
 
-    function refund(bytes32 bidId) public onlyEoa(_msgSender()) {
-        PriceItem storage item = _priceTable[bidId];
+    function refund(bytes32 bidId) public onlyEoa(_msgSender()) onlyUnpaused {
+        PriceItem memory item = _priceTable[bidId];
         require(item.value > 0, ".BIT: invalid bidId");
         require(item.deadline < block.timestamp, ".BIT: bid hasn't end");
 

@@ -2,7 +2,6 @@ const {
   time,
   loadFixture,
 } = require("@nomicfoundation/hardhat-network-helpers");
-const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 const { expect, assert } = require("chai");
 const { upgrades, ethers } = require("hardhat");
 
@@ -96,6 +95,16 @@ describe("DotBit Auction", function () {
       await expect(contract.buy(seller.address, buyer.address, fixedId, ACCOUNT_ID, PRICE, deadline, { value: PRICE }))
         .rejectedWith(".BIT: deadline is too long");
     });
+
+    it("Should fail while paused", async function () {
+      const { contract, owner, buyer, seller } = await loadFixture(deploy);
+
+      await contract.connect(owner).setPause(true);
+      const deadline = await time.latest() + 3600 * 5;
+      const fixedId = getFixedId(deadline);
+      await expect(contract.buy(seller.address, buyer.address, fixedId, ACCOUNT_ID, PRICE, deadline, { value: PRICE }))
+        .rejectedWith(".BIT: contract has paused, please wait unpause");
+    });
   });
 
   // Testing Bid
@@ -141,6 +150,16 @@ describe("DotBit Auction", function () {
       await expect(contract.connect(another_buyer).bid(...bidParams, { value: PRICE }))
         .rejectedWith(".BIT: ETH amount is less than current price");
     });
+
+    it("Should fail while paused", async function () {
+      const { contract, owner, buyer, seller } = await loadFixture(deploy);
+
+      await contract.connect(owner).setPause(true);
+      const deadline = await time.latest() + 3600 * 24 * 5;
+      const bidId = getBidId(deadline);
+      await expect(contract.bid(seller.address, buyer.address, bidId, ACCOUNT_ID, PRICE, deadline, { value: PRICE }))
+        .rejectedWith(".BIT: contract has paused, please wait unpause");
+    });
   });
 
   // Testing GetBidIncome
@@ -181,6 +200,16 @@ describe("DotBit Auction", function () {
       await expect(contract.connect(wallets[0]).getBidIncome(bidId, buyer.address))
         .rejectedWith(".BIT: caller should be the seller before the end of bid");
     });
+
+    it("Should fail while paused", async function () {
+      const { contract, owner, buyer, seller } = await loadFixture(deploy);
+
+      await contract.connect(owner).setPause(true);
+      const deadline = await time.latest() + 3600 * 24 * 5;
+      const bidId = getBidId(deadline);
+      await expect(contract.connect(seller).getBidIncome(bidId, buyer.address))
+        .rejectedWith(".BIT: contract has paused, please wait unpause");
+    });
   });
 
   // Testing Refund
@@ -211,6 +240,16 @@ describe("DotBit Auction", function () {
 
       await expect(contract.connect(owner).refund(bidId))
         .rejectedWith(".BIT: bid hasn't end");
+    });
+
+    it("Should fail while paused", async function () {
+      const { contract, owner } = await loadFixture(deploy);
+
+      await contract.connect(owner).setPause(true);
+      const deadline = await time.latest() + 3600 * 24 * 5;
+      const bidId = getBidId(deadline);
+      await expect(contract.connect(owner).refund(bidId))
+        .rejectedWith(".BIT: contract has paused, please wait unpause");
     });
   });
 });
